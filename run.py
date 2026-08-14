@@ -1,18 +1,9 @@
-"""
-Vexwire pricing pipeline - single-file version.
-
-For each eBay seller account (bidallies, directauth, cellfeee):
-  1. Scrape the account's last-month "Received as Seller" feedback (Item Title/ID/Price).
-  2. Look up a comparable WatchCount price/title for each unique Item ID.
-  3. Build a 2-sheet pricing analysis workbook (row-level Feedback + Avg Price by Item summary).
-
-Usage:
-    python run.py                              # runs all three accounts, one by one
-    python run.py --account bidallies          # just one account
-    python run.py --account cellfeee --skip-scrape   # reuse existing feedback.xlsx, redo pricing + analysis only
-
-Requires Google Chrome installed. Missing Python packages are installed automatically on first run.
-"""
+# Scrapes eBay feedback for bidallies/directauth/cellfeee, matches each item against
+# WatchCount for a comp price, then builds a pricing analysis workbook per account.
+#
+# python run.py
+# python run.py --account bidallies
+# python run.py --account cellfeee --skip-scrape
 
 import argparse
 import importlib
@@ -62,9 +53,7 @@ ACCOUNTS = ["bidallies", "directauth", "cellfeee"]
 PROFILE_DIR = str(REPO_ROOT / ".chrome_profile")
 
 
-# ---------------------------------------------------------------------------
 # Chrome driver + WatchCount login
-# ---------------------------------------------------------------------------
 
 def _clear_stale_profile_locks():
     for name in ("SingletonLock", "SingletonSocket", "SingletonCookie", "DevToolsActivePort"):
@@ -118,9 +107,7 @@ def login(driver):
     time.sleep(4)
 
 
-# ---------------------------------------------------------------------------
 # WatchCount search/parsing + CAPTCHA handling
-# ---------------------------------------------------------------------------
 
 CAPTCHA_MARKER = 'id="challenge-section"'
 
@@ -246,9 +233,7 @@ def wc_lookup_price(driver, item_id):
     return {"price": "No match", "title": "No match"}
 
 
-# ---------------------------------------------------------------------------
 # Step 1: scrape eBay feedback
-# ---------------------------------------------------------------------------
 
 PAGE_LIMIT = 25
 FEEDBACK_FILTER = "feedback_page:RECEIVED_AS_SELLER,period:ONE_MONTH,include_automated_feedback:true"
@@ -442,9 +427,7 @@ def scrape_feedback(username, output_dir, max_pages_this_run):
     return output_path
 
 
-# ---------------------------------------------------------------------------
 # Step 2: look up WatchCount prices
-# ---------------------------------------------------------------------------
 
 WAIT_SECONDS = 5
 PRICE_HEADER = "WatchCount Price"
@@ -545,9 +528,7 @@ def fetch_watchcount_prices(feedback_path, cache_path, max_new=10_000):
     print(f"Done. {len(cache)}/{len(unique_ids)} unique item IDs resolved. Saved to {feedback_path}", flush=True)
 
 
-# ---------------------------------------------------------------------------
 # Step 3: build the analysis workbook
-# ---------------------------------------------------------------------------
 
 ANALYSIS_HEADER_FILL = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
 ANALYSIS_HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -663,9 +644,7 @@ def build_analysis(source_path, output_path):
     return output_path
 
 
-# ---------------------------------------------------------------------------
 # Orchestration
-# ---------------------------------------------------------------------------
 
 def run_account(username, skip_scrape, max_pages):
     output_dir = REPO_ROOT / "output" / username
@@ -693,7 +672,7 @@ def run_account(username, skip_scrape, max_pages):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description="Scrape eBay feedback, price it against WatchCount, build the analysis workbook.")
     parser.add_argument("--account", default="all", help=f"One of {ACCOUNTS}, or 'all' (default)")
     parser.add_argument("--skip-scrape", action="store_true", help="Reuse existing feedback.xlsx instead of scraping live")
     parser.add_argument("--max-pages", type=int, default=55, help="Max feedback pages to fetch per run (resumable via checkpoint)")
