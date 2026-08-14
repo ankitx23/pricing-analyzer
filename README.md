@@ -1,4 +1,4 @@
-# Vexwire Pricing Pipeline
+# eBay Pricing Analyzer
 
 For each eBay seller account (`bidallies`, `directauth`, `cellfeee`), scrapes the last month's "Received as
 Seller" feedback (Item Title / Item ID / Price), looks up a comparable WatchCount price for each item, and
