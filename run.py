@@ -49,7 +49,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 REPO_ROOT = Path(__file__).resolve().parent
-ACCOUNTS = ["bidallies", "directauth", "cellfeee"]
+ACCOUNTS = ["cellfeee", "directauth", "bidallies"]
 PROFILE_DIR = str(REPO_ROOT / ".chrome_profile")
 
 
