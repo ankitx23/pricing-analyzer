@@ -711,8 +711,20 @@ def main():
         flush=True,
     )
 
+    failed = []
     for username in targets:
-        run_account(username, args.skip_scrape, args.max_pages)
+        try:
+            run_account(username, args.skip_scrape, args.max_pages)
+        except Exception as e:
+            print(f"\n[{username}] FAILED: {e}", flush=True)
+            print(f"[{username}] Skipping to the next account. Re-run with --account {username} "
+                  f"--skip-scrape once this is fixed to pick up where it left off.", flush=True)
+            failed.append(username)
+
+    if failed:
+        print(f"\nDone, but {len(failed)}/{len(targets)} account(s) failed: {', '.join(failed)}. "
+              f"See errors above. Others' output is still under output/<account>/.", flush=True)
+        raise SystemExit(1)
 
     print("\nAll done. Analysis workbooks are under output/<account>/.", flush=True)
 
