@@ -377,6 +377,7 @@ def scrape_feedback(username, output_dir, max_pages_this_run):
     driver = make_driver()
     pages_done_this_run = 0
     page_id = start_page
+    last_page_done = start_page - 1
     try:
         total = None
         empty_streak = 0
@@ -399,6 +400,7 @@ def scrape_feedback(username, output_dir, max_pages_this_run):
             print(f"  -> {len(rows)} rows on page, {len(new_rows)} new, total so far {len(all_rows) + len(new_rows)}", flush=True)
             all_rows.extend((title, item_id, price) for _fid, title, item_id, price in new_rows)
             fb_save_checkpoint(checkpoint_path, page_id)
+            last_page_done = page_id
             pages_done_this_run += 1
 
             if total is not None and len(all_rows) >= total:
@@ -423,7 +425,7 @@ def scrape_feedback(username, output_dir, max_pages_this_run):
         ws.append([title, item_id, price])
     fb_format_workbook(ws)
     wb.save(output_path)
-    print(f"\nSaved {len(all_rows)} rows to {output_path} (checkpoint at page {page_id})", flush=True)
+    print(f"\nSaved {len(all_rows)} rows to {output_path} (checkpoint at page {last_page_done})", flush=True)
     return output_path
 
 
@@ -460,7 +462,7 @@ def wcp_find_or_create_column(ws, header):
     return col
 
 
-def fetch_watchcount_prices(feedback_path, cache_path, max_new=10_000):
+def fetch_watchcount_prices(feedback_path, cache_path, max_new=10_000, save_every=20):
     wb = openpyxl.load_workbook(feedback_path)
     ws = wb.active
     price_col = wcp_find_or_create_column(ws, PRICE_HEADER)
@@ -474,17 +476,28 @@ def fetch_watchcount_prices(feedback_path, cache_path, max_new=10_000):
     if item_id_col is None:
         raise RuntimeError("Could not find 'Item ID' column")
 
+    # Build item_id -> [row numbers] once so later updates are O(1) lookups
+    # instead of an O(max_row) rescan per item.
+    rows_by_item_id = defaultdict(list)
     unique_ids = []
     seen = set()
     for row in range(2, ws.max_row + 1):
         item_id = ws.cell(row=row, column=item_id_col).value
-        if item_id is None or str(item_id) in seen:
+        if item_id is None:
             continue
-        seen.add(str(item_id))
-        unique_ids.append(str(item_id))
+        item_id = str(item_id)
+        rows_by_item_id[item_id].append(row)
+        if item_id not in seen:
+            seen.add(item_id)
+            unique_ids.append(item_id)
 
     cache = wcp_load_cache(cache_path)
     print(f"{len(unique_ids)} unique item IDs, {len(cache)} already cached", flush=True)
+
+    def write_result(item_id, result):
+        for row in rows_by_item_id.get(item_id, []):
+            ws.cell(row=row, column=price_col, value=result["price"])
+            ws.cell(row=row, column=title_col, value=result["title"])
 
     driver = make_driver()
     new_lookups = 0
@@ -506,25 +519,30 @@ def fetch_watchcount_prices(feedback_path, cache_path, max_new=10_000):
             cache[item_id] = result
             new_lookups += 1
             print(f"    -> {result['price']} | {result['title']}", flush=True)
+            # Cache write is cheap (small JSON) - keep it per-iteration so a
+            # crash never loses a completed lookup.
             wcp_save_cache(cache_path, cache)
+            write_result(item_id, result)
 
-            for row in range(2, ws.max_row + 1):
-                if str(ws.cell(row=row, column=item_id_col).value) == item_id:
-                    ws.cell(row=row, column=price_col, value=result["price"])
-                    ws.cell(row=row, column=title_col, value=result["title"])
-            wb.save(feedback_path)
+            # The full workbook re-save is expensive (grows with total row
+            # count), so only do it periodically instead of every iteration.
+            # The `finally` block below guarantees a save happens even if the
+            # loop exits early via exception, so progress is never lost.
+            if new_lookups % save_every == 0:
+                wb.save(feedback_path)
 
             time.sleep(WAIT_SECONDS)
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        finally:
+            # Make sure every row whose item_id is resolved (whether looked
+            # up just now, in a previous run, or already cached) is written
+            # out and persisted, even if the loop above stopped early.
+            for item_id, result in cache.items():
+                write_result(item_id, result)
+            wb.save(feedback_path)
 
-    for row in range(2, ws.max_row + 1):
-        item_id = ws.cell(row=row, column=item_id_col).value
-        if item_id is not None and str(item_id) in cache:
-            result = cache[str(item_id)]
-            ws.cell(row=row, column=price_col, value=result["price"])
-            ws.cell(row=row, column=title_col, value=result["title"])
-    wb.save(feedback_path)
     print(f"Done. {len(cache)}/{len(unique_ids)} unique item IDs resolved. Saved to {feedback_path}", flush=True)
 
 
